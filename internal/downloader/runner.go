@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -45,7 +46,18 @@ func (r *Runner) buildArgs(o Options) []string {
 }
 
 func (r *Runner) Run(ctx context.Context, o Options, onLine func(stream, line string)) error {
+	return r.RunWithProcess(ctx, o, onLine, nil)
+}
+
+func (r *Runner) RunWithProcess(ctx context.Context, o Options, onLine func(stream, line string), onProcess func(*os.Process)) error {
 	cmd := exec.CommandContext(ctx, r.YtDlpPath, r.buildArgs(o)...)
+	configureProcess(cmd)
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return terminateProcess(cmd.Process)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -58,6 +70,9 @@ func (r *Runner) Run(ctx context.Context, o Options, onLine func(stream, line st
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start yt-dlp: %w", err)
+	}
+	if onProcess != nil {
+		onProcess(cmd.Process)
 	}
 
 	var mu sync.Mutex

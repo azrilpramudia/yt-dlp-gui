@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,31 +17,55 @@ import (
 const (
 	EventProgress = "download:progress"
 	EventError    = "download:error"
-	EventFinished = "download:finished"
+	EventQueue    = "download:queue"
 )
 
+type task struct {
+	id               string
+	options          downloader.Options
+	progress         downloader.Progress
+	errMessage       string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	process          *os.Process
+	running          bool
+	paused           bool
+	phaseBeforePause downloader.Status
+}
+
 type App struct {
-	mu     sync.Mutex
-	ctx    context.Context
-	cancel context.CancelFunc
-	runner *downloader.Runner
+	mu            sync.Mutex
+	ctx           context.Context
+	runner        *downloader.Runner
+	tasks         map[string]*task
+	order         []string
+	maxConcurrent int
 }
 
 func NewApp() *App {
-	return &App{runner: &downloader.Runner{YtDlpPath: "yt-dlp"}}
+	return &App{
+		runner:        &downloader.Runner{YtDlpPath: "yt-dlp"},
+		tasks:         make(map[string]*task),
+		maxConcurrent: 1,
+	}
 }
 
-func (a *App) Startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) Startup(ctx context.Context) {
+	a.mu.Lock()
+	a.ctx = ctx
+	a.mu.Unlock()
+}
 
-// SelectDownloadFolder opens the native directory picker. An empty path means it was dismissed.
 func (a *App) SelectDownloadFolder() (string, error) {
-	if a.ctx == nil {
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
 		return "", downloader.NewDownloadError("Aplikasi belum siap")
 	}
-	folder, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+	folder, err := runtime.OpenDirectoryDialog(ctx, runtime.OpenDialogOptions{
 		Title:                "Pilih folder unduhan",
 		CanCreateDirectories: true,
-		ShowHiddenFiles:      false,
 	})
 	if err != nil {
 		return "", downloader.WrapDownloadError(err)
@@ -47,87 +73,271 @@ func (a *App) SelectDownloadFolder() (string, error) {
 	return folder, nil
 }
 
-// StartDownload starts a download in the background and streams progress events.
-func (a *App) StartDownload(options downloader.Options) error {
+// SetQueueConcurrency selects how many downloads can run at once (1 to 4).
+func (a *App) SetQueueConcurrency(count int) error {
+	if count < 1 || count > 4 {
+		return downloader.NewDownloadError("Jumlah unduhan bersamaan harus antara 1 dan 4")
+	}
+	a.mu.Lock()
+	a.maxConcurrent = count
+	started := a.dispatchLocked()
+	a.mu.Unlock()
+	a.emitQueue()
+	a.launch(started)
+	return nil
+}
+
+func (a *App) StartDownload(options downloader.Options) (string, error) {
 	options.URL = strings.TrimSpace(options.URL)
 	if options.URL == "" {
-		return downloader.NewDownloadError("URL tidak boleh kosong")
+		return "", downloader.NewDownloadError("URL tidak boleh kosong")
 	}
 	if options.AudioOnly {
 		switch options.AudioFormat {
 		case "", "mp3", "m4a", "opus", "wav", "flac":
 		default:
-			return downloader.NewDownloadError("Format audio tidak didukung")
+			return "", downloader.NewDownloadError("Format audio tidak didukung")
 		}
 	}
 	if options.OutputDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return downloader.WrapDownloadError(err)
+			return "", downloader.WrapDownloadError(err)
 		}
 		options.OutputDir = filepath.Join(home, "Downloads")
 	}
 	if err := os.MkdirAll(options.OutputDir, 0o755); err != nil {
-		return downloader.WrapDownloadError(err)
+		return "", downloader.WrapDownloadError(err)
 	}
 
+	id, err := newID()
+	if err != nil {
+		return "", downloader.WrapDownloadError(err)
+	}
+	item := &task{
+		id:       id,
+		options:  options,
+		progress: downloader.Progress{Phase: downloader.StatusQueued, ETA: -1, Indeterminate: true},
+	}
 	a.mu.Lock()
-	if a.cancel != nil {
-		a.mu.Unlock()
-		return downloader.NewDownloadError("Unduhan sedang berjalan")
-	}
-	parent := a.ctx
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithCancel(parent)
-	a.cancel = cancel
+	a.tasks[id] = item
+	a.order = append(a.order, id)
+	started := a.dispatchLocked()
 	a.mu.Unlock()
+	a.emitQueue()
+	a.launch(started)
+	return id, nil
+}
 
-	go a.runDownload(ctx, cancel, options)
+func (a *App) CancelDownload(id string) error {
+	a.mu.Lock()
+	item := a.tasks[id]
+	if item == nil {
+		a.mu.Unlock()
+		return downloader.NewDownloadError("Unduhan tidak ditemukan")
+	}
+	if item.progress.Phase == downloader.StatusFinished || item.progress.Phase == downloader.StatusFailed || item.progress.Phase == downloader.StatusCancelled {
+		a.mu.Unlock()
+		return nil
+	}
+	if item.running {
+		cancel := item.cancel
+		a.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		return nil
+	}
+	item.progress.Phase = downloader.StatusCancelled
+	a.mu.Unlock()
+	a.emitQueue()
 	return nil
 }
 
-func (a *App) CancelDownload() {
+func (a *App) PauseDownload(id string) error {
 	a.mu.Lock()
-	cancel := a.cancel
+	item := a.tasks[id]
+	if item == nil || !item.running {
+		a.mu.Unlock()
+		return downloader.NewDownloadError("Unduhan tidak sedang berjalan")
+	}
+	if item.paused {
+		a.mu.Unlock()
+		return nil
+	}
+	item.paused = true
+	item.phaseBeforePause = item.progress.Phase
+	process := item.process
+	item.progress.Phase = downloader.StatusPaused
+	if process != nil {
+		if err := downloader.PauseProcess(process); err != nil {
+			item.paused = false
+			item.progress.Phase = item.phaseBeforePause
+			a.mu.Unlock()
+			a.emitQueue()
+			return downloader.WrapDownloadError(err)
+		}
+	}
 	a.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	a.emitQueue()
+	return nil
+}
+
+func (a *App) ResumeDownload(id string) error {
+	a.mu.Lock()
+	item := a.tasks[id]
+	if item == nil || !item.running || !item.paused {
+		a.mu.Unlock()
+		return downloader.NewDownloadError("Unduhan tidak sedang dijeda")
+	}
+	process := item.process
+	if process != nil {
+		if err := downloader.ResumeProcess(process); err != nil {
+			a.mu.Unlock()
+			return downloader.WrapDownloadError(err)
+		}
+	}
+	item.paused = false
+	item.progress.Phase = item.phaseBeforePause
+	a.mu.Unlock()
+	a.emitQueue()
+	return nil
+}
+
+func (a *App) dispatchLocked() []*task {
+	running := 0
+	for _, item := range a.tasks {
+		if item.running {
+			running++
+		}
+	}
+	var started []*task
+	for _, id := range a.order {
+		if running >= a.maxConcurrent {
+			break
+		}
+		item := a.tasks[id]
+		if item == nil || item.running || item.progress.Phase != downloader.StatusQueued {
+			continue
+		}
+		parent := a.ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		ctx, cancel := context.WithCancel(parent)
+		item.ctx = ctx
+		item.cancel = cancel
+		item.running = true
+		started = append(started, item)
+		running++
+	}
+	return started
+}
+
+func (a *App) launch(items []*task) {
+	for _, item := range items {
+		go a.runDownload(item)
 	}
 }
 
-func (a *App) runDownload(ctx context.Context, cancel context.CancelFunc, options downloader.Options) {
-	defer func() {
-		cancel()
-		a.mu.Lock()
-		a.cancel = nil
-		a.mu.Unlock()
-	}()
+func (a *App) runDownload(item *task) {
+	a.mu.Lock()
+	ctx := item.ctx
+	cancel := item.cancel
+	a.mu.Unlock()
 
 	parser := downloader.NewParser()
 	var reported *downloader.DownloadError
-	err := a.runner.Run(ctx, options, func(_ string, line string) {
+	var processErr error
+	err := a.runner.RunWithProcess(ctx, item.options, func(_ string, line string) {
 		if strings.HasPrefix(line, "ERROR:") {
 			reported = downloader.NewDownloadError(strings.TrimSpace(strings.TrimPrefix(line, "ERROR:")))
 			return
 		}
 		if progress, ok := parser.Feed(line); ok {
-			runtime.EventsEmit(a.ctx, EventProgress, progress)
+			a.updateProgress(item, progress)
 		}
+	}, func(process *os.Process) {
+		a.mu.Lock()
+		item.process = process
+		if item.paused {
+			processErr = downloader.PauseProcess(process)
+		}
+		a.mu.Unlock()
 	})
-	if reported != nil {
-		runtime.EventsEmit(a.ctx, EventError, reported)
-		return
+
+	phase := downloader.StatusFinished
+	message := ""
+	switch {
+	case processErr != nil:
+		phase, message = downloader.StatusFailed, processErr.Error()
+	case reported != nil:
+		phase, message = downloader.StatusFailed, reported.Error()
+	case err != nil && errors.Is(ctx.Err(), context.Canceled):
+		phase = downloader.StatusCancelled
+	case err != nil:
+		phase, message = downloader.StatusFailed, err.Error()
 	}
-	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			runtime.EventsEmit(a.ctx, EventProgress, downloader.Progress{Phase: downloader.StatusCancelled, ETA: -1})
-			return
+	cancel()
+	a.mu.Lock()
+	item.cancel = nil
+	item.process = nil
+	item.running = false
+	item.paused = false
+	item.progress.Phase = phase
+	if phase == downloader.StatusFinished {
+		item.progress.Percent = 100
+		item.progress.StagePercent = 100
+		item.progress.Indeterminate = false
+	}
+	item.errMessage = message
+	started := a.dispatchLocked()
+	a.mu.Unlock()
+	if phase == downloader.StatusFailed {
+		runtime.EventsEmit(a.eventContext(), EventError, downloader.DownloadFailure{ID: item.id, Message: message})
+	}
+	a.emitQueue()
+	a.launch(started)
+}
+
+func (a *App) updateProgress(item *task, progress downloader.Progress) {
+	a.mu.Lock()
+	if item.paused {
+		item.phaseBeforePause = progress.Phase
+		progress.Phase = downloader.StatusPaused
+	}
+	item.progress = progress
+	a.mu.Unlock()
+	runtime.EventsEmit(a.eventContext(), EventProgress, downloader.ProgressEvent{ID: item.id, Progress: progress})
+	a.emitQueue()
+}
+
+func (a *App) emitQueue() {
+	a.mu.Lock()
+	items := make([]downloader.QueueItem, 0, len(a.order))
+	for _, id := range a.order {
+		if item := a.tasks[id]; item != nil {
+			items = append(items, downloader.QueueItem{ID: item.id, URL: item.options.URL, Progress: item.progress, Error: item.errMessage})
 		}
-		runtime.EventsEmit(a.ctx, EventError, downloader.WrapDownloadError(err))
-		return
 	}
-	runtime.EventsEmit(a.ctx, EventProgress, downloader.Progress{Phase: downloader.StatusFinished, Percent: 100, StagePercent: 100, ETA: 0})
-	runtime.EventsEmit(a.ctx, EventFinished)
+	a.mu.Unlock()
+	runtime.EventsEmit(a.eventContext(), EventQueue, items)
+}
+
+func (a *App) eventContext() context.Context {
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
+func newID() (string, error) {
+	bytes := make([]byte, 12)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }

@@ -7,6 +7,7 @@ type Status string
 const (
 	StatusQueued      Status = "queued"
 	StatusDownloading Status = "downloading"
+	StatusPaused      Status = "paused"
 	StatusProcessing  Status = "processing"
 	StatusFinished    Status = "finished"
 	StatusFailed      Status = "failed"
@@ -20,6 +21,23 @@ type Options struct {
 	Format         string `json:"format"`
 	AudioOnly      bool   `json:"audioOnly"`
 	AudioFormat    string `json:"audioFormat"`
+}
+
+type QueueItem struct {
+	ID       string   `json:"id"`
+	URL      string   `json:"url"`
+	Progress Progress `json:"progress"`
+	Error    string   `json:"error,omitempty"`
+}
+
+type ProgressEvent struct {
+	ID       string   `json:"id"`
+	Progress Progress `json:"progress"`
+}
+
+type DownloadFailure struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
 }
 
 type Progress struct {

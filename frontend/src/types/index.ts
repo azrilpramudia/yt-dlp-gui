@@ -2,6 +2,7 @@ export type DownloadPhase =
   | 'queued'
   | 'downloading'
   | 'processing'
+  | 'paused'
   | 'finished'
   | 'failed'
   | 'cancelled';
@@ -28,3 +29,13 @@ export type DownloadRequest = {
   audioOnly: boolean;
   audioFormat: string;
 };
+
+export type QueueItem = {
+  id: string;
+  url: string;
+  progress: DownloadProgress;
+  error?: string;
+};
+
+export type ProgressEvent = { id: string; progress: DownloadProgress };
+export type QueueFailure = { id: string; message: string };

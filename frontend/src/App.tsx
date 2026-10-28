@@ -3,7 +3,7 @@ import { UrlForm } from './components/ui/UrlForm';
 import { useDownloader } from './hooks/useDownloader';
 
 function App() {
-  const { progress, error, active, outputDir, start, cancel, chooseFolder } = useDownloader();
+  const { items, error, outputDir, concurrency, start, cancel, pause, resume, chooseFolder, setConcurrency } = useDownloader();
 
   return (
     <main className="min-h-screen bg-slate-950 px-5 py-12 text-slate-100 sm:px-8">
@@ -14,7 +14,7 @@ function App() {
           <p className="text-slate-400">Tempel tautan video untuk memulai unduhan.</p>
         </header>
 
-        <UrlForm disabled={active} folder={outputDir} onPickFolder={() => void chooseFolder()} onSubmit={(request) => void start(request)} />
+        <UrlForm disabled={false} folder={outputDir} onPickFolder={() => void chooseFolder()} onSubmit={(request) => void start(request)} />
 
         {error && (
           <div className="rounded-xl border border-red-900/80 bg-red-950/50 px-4 py-3 text-sm text-red-200" role="alert">
@@ -22,7 +22,17 @@ function App() {
           </div>
         )}
 
-        <DownloadList progress={progress} onCancel={() => void cancel()} />
+        <div className="flex items-center justify-between gap-3">
+          <label className="text-sm text-slate-400" htmlFor="queue-concurrency">Mode antrean</label>
+          <select id="queue-concurrency" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200" value={concurrency} onChange={(event) => void setConcurrency(Number(event.target.value))}>
+            <option value={1}>Berurutan</option>
+            <option value={2}>Paralel · 2 unduhan</option>
+            <option value={3}>Paralel · 3 unduhan</option>
+            <option value={4}>Paralel · 4 unduhan</option>
+          </select>
+        </div>
+
+        <DownloadList items={items} onCancel={(id) => void cancel(id)} onPause={(id) => void pause(id)} onResume={(id) => void resume(id)} />
       </div>
     </main>
   );

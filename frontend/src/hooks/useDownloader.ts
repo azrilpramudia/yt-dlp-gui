@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CancelDownload, SelectDownloadFolder, StartDownload } from '../../wailsjs/go/app/App';
+import {
+  CancelDownload, PauseDownload, ResumeDownload, SelectDownloadFolder,
+  SetQueueConcurrency, StartDownload,
+} from '../../wailsjs/go/app/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { DownloadFailure, DownloadProgress, DownloadRequest } from '../types';
+import type { DownloadFailure, DownloadProgress, DownloadRequest, ProgressEvent, QueueFailure, QueueItem } from '../types';
 
 const emptyProgress = (): DownloadProgress => ({
   phase: 'queued', stage: 0, stageCount: 0, downloadedBytes: 0, totalBytes: 0,
@@ -9,33 +12,60 @@ const emptyProgress = (): DownloadProgress => ({
 });
 
 export function useDownloader() {
-  const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const [items, setItems] = useState<QueueItem[]>([]);
   const [error, setError] = useState('');
   const [outputDir, setOutputDir] = useState('');
-  const active = progress?.phase === 'queued' || progress?.phase === 'downloading' || progress?.phase === 'processing';
+  const [concurrency, setConcurrencyState] = useState(1);
 
   useEffect(() => {
-    const offProgress = EventsOn('download:progress', (next: DownloadProgress) => setProgress(next));
-    const offError = EventsOn('download:error', (failure: DownloadFailure) => {
-      setError(failure?.message || 'Unduhan gagal');
-      setProgress((current) => current ? { ...current, phase: 'failed' } : { ...emptyProgress(), phase: 'failed' });
+    const offQueue = EventsOn('download:queue', (next: QueueItem[]) => setItems(next));
+    const offProgress = EventsOn('download:progress', (event: ProgressEvent) => {
+      setItems((current) => current.map((item) => item.id === event.id ? { ...item, progress: event.progress } : item));
     });
-    return () => { offProgress(); offError(); };
+    const offError = EventsOn('download:error', (failure: QueueFailure | DownloadFailure) => {
+      const queuedFailure = failure as QueueFailure;
+      setError(queuedFailure.message || 'Unduhan gagal');
+      if (queuedFailure.id) {
+        setItems((current) => current.map((item) => item.id === queuedFailure.id
+          ? { ...item, error: queuedFailure.message, progress: { ...item.progress, phase: 'failed' } }
+          : item));
+      }
+    });
+    return () => { offQueue(); offProgress(); offError(); };
   }, []);
 
   const start = useCallback(async (request: DownloadRequest) => {
     setError('');
-    setProgress(emptyProgress());
+    const optimistic: QueueItem = {
+      id: `pending-${Date.now()}`,
+      url: request.url.trim(),
+      progress: emptyProgress(),
+    };
     try {
       await StartDownload({
         url: request.url.trim(), outputDir, outputTemplate: '', format: request.format,
         audioOnly: request.audioOnly, audioFormat: request.audioFormat,
       });
     } catch (failure) {
-      setProgress((current) => current ? { ...current, phase: 'failed' } : null);
       setError(failure instanceof Error ? failure.message : String(failure));
+      setItems((current) => [...current, { ...optimistic, progress: { ...optimistic.progress, phase: 'failed' } }]);
     }
   }, [outputDir]);
+
+  const cancel = useCallback(async (id: string) => {
+    try { await CancelDownload(id); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+  }, []);
+
+  const pause = useCallback(async (id: string) => {
+    try { await PauseDownload(id); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+  }, []);
+
+  const resume = useCallback(async (id: string) => {
+    try { await ResumeDownload(id); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+  }, []);
 
   const chooseFolder = useCallback(async () => {
     setError('');
@@ -47,13 +77,15 @@ export function useDownloader() {
     }
   }, []);
 
-  const cancel = useCallback(async () => {
+  const setConcurrency = useCallback(async (count: number) => {
+    setError('');
     try {
-      await CancelDownload();
+      await SetQueueConcurrency(count);
+      setConcurrencyState(count);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
   }, []);
 
-  return { progress, error, active, outputDir, start, cancel, chooseFolder };
+  return { items, error, outputDir, concurrency, start, cancel, pause, resume, chooseFolder, setConcurrency };
 }
