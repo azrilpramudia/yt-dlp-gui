@@ -2,6 +2,10 @@
 
 A desktop video downloader built with Wails, React, and yt-dlp.
 
+For installation and usage instructions, see the [Desktop User Guide](docs/USER_GUIDE.md).
+
+This project is licensed under the [MIT License](LICENSE).
+
 ## Requirements
 
 - Go 1.25 or newer
