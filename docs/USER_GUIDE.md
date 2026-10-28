@@ -1,14 +1,15 @@
 # Desktop User Guide
 
-This guide explains how to install and use yt-dlp GUI. The app provides a desktop interface for `yt-dlp`; it does not include the downloader or FFmpeg.
+This guide explains how to install and use yt-dlp GUI. The app provides a desktop interface for `yt-dlp`; it does not include `yt-dlp` or FFmpeg.
 
 ## Requirements
 
-- **yt-dlp** must be installed and available on `PATH`, or its executable must be selected in **Settings**.
-- **FFmpeg** must be available to yt-dlp for merging separate audio/video streams and extracting audio.
+- **yt-dlp** must be installed separately on Windows, macOS, and Linux. Make it available on `PATH`, or select its executable in **Settings**.
+- **FFmpeg** must also be installed separately and available on `PATH`. yt-dlp uses it to merge separate audio/video streams and extract audio.
+- **Linux only:** GTK 3 and WebKit2GTK 4.1 runtime libraries must be installed on the system for the desktop app to start. These are app runtime dependencies; they are separate from yt-dlp and FFmpeg.
 - An internet connection is needed to download media and check for application updates.
 
-The app shows the detected yt-dlp and FFmpeg versions in its bottom status bar. If either shows `—`, check that the tool is installed and available to the app, or select the yt-dlp executable in Settings.
+The app shows the detected yt-dlp and FFmpeg versions in its bottom status bar. If either shows `—`, check that the tool is installed and available to the app. For yt-dlp, you can also select its executable in Settings.
 
 ## Install the app
 
@@ -16,9 +17,9 @@ Download the package for your operating system from the project's GitHub Release
 
 - **Windows:** run the `.exe` installer. The installer is not code-signed, so Windows may show a security prompt.
 - **macOS:** open the universal `.zip`, then move `ytdlp-gui.app` to Applications. The app is not notarized; macOS may show a first-open security warning.
-- **Linux:** extract the `.tar.gz` archive and run the `ytdlp-gui` executable. Required GTK 3 and WebKit2GTK 4.1 runtime libraries must be installed on the system.
+- **Linux:** first make sure GTK 3 and WebKit2GTK 4.1 runtime libraries are installed. Then extract the `.tar.gz` archive and run the `ytdlp-gui` executable. Install the matching runtime packages using your Linux distribution's package manager if they are missing.
 
-These release packages do not bundle yt-dlp or FFmpeg. Install those tools separately before downloading media.
+The release packages do not bundle yt-dlp or FFmpeg. Install both separately before downloading media on any operating system. Linux users must also have GTK 3 and WebKit2GTK 4.1 installed before launching the app.
 
 ## Download media
 
