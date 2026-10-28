@@ -3,6 +3,7 @@ package downloader
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -82,19 +83,36 @@ func (r *Runner) RunWithProcess(ctx context.Context, o Options, onLine func(stre
 		onLine(stream, line)
 	}
 
+	errCh := make(chan error, 2)
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); scan(stdout, "stdout", emit) }()
-	go func() { defer wg.Done(); scan(stderr, "stderr", emit) }()
+	go func() { defer wg.Done(); errCh <- scan(stdout, "stdout", emit) }()
+	go func() { defer wg.Done(); errCh <- scan(stderr, "stderr", emit) }()
 
 	wg.Wait()
-	return cmd.Wait()
+	close(errCh)
+	var scanErr error
+	for err := range errCh {
+		scanErr = errors.Join(scanErr, err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return errors.Join(scanErr, err)
+	}
+	if scanErr != nil {
+		return fmt.Errorf("read yt-dlp output: %w", scanErr)
+	}
+	return nil
 }
 
-func scan(rd io.Reader, stream string, emit func(stream, line string)) {
+func scan(rd io.Reader, stream string, emit func(stream, line string)) error {
 	sc := bufio.NewScanner(rd)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		emit(stream, sc.Text())
 	}
+	if err := sc.Err(); err != nil {
+		_, _ = io.Copy(io.Discard, rd)
+		return err
+	}
+	return nil
 }

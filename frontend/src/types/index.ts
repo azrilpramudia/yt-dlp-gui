@@ -46,3 +46,10 @@ export type AppSettings = {
   ytDlpPath: string;
   maxConcurrent: number;
 };
+
+export type UpdateInfo = {
+  currentVersion: string;
+  latestVersion: string;
+  releaseUrl: string;
+  available: boolean;
+};

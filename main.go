@@ -9,12 +9,14 @@ import (
 	"ytdlp-gui/internal/app"
 )
 
+var version = "dev"
+
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
 	// Create an instance of the app structure
-	application := app.NewApp()
+	application := app.NewApp(version)
 
 	// Create application with options
 	err := wails.Run(&options.App{

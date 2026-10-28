@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"ytdlp-gui/internal/config"
 	"ytdlp-gui/internal/downloader"
 	"ytdlp-gui/internal/storage"
+	"ytdlp-gui/internal/updater"
 )
 
 const (
@@ -44,9 +46,10 @@ type App struct {
 	maxConcurrent int
 	settings      config.Settings
 	settingsPath  string
+	version       string
 }
 
-func NewApp() *App {
+func NewApp(version string) *App {
 	settings := config.DefaultSettings()
 	settingsPath, _ := config.SettingsPath()
 	if settingsPath != "" {
@@ -69,7 +72,15 @@ func NewApp() *App {
 		maxConcurrent: settings.MaxConcurrent,
 		settings:      settings,
 		settingsPath:  settingsPath,
+		version:       version,
 	}
+}
+
+func (a *App) GetAppVersion() string { return a.version }
+
+func (a *App) CheckForUpdates() (updater.UpdateInfo, error) {
+	ctx := a.eventContext()
+	return updater.Check(ctx, a.version)
 }
 
 func (a *App) Startup(ctx context.Context) {
@@ -369,6 +380,8 @@ func (a *App) runDownload(item *task) {
 		phase, message = downloader.StatusFailed, reported.Error()
 	case err != nil && errors.Is(ctx.Err(), context.Canceled):
 		phase = downloader.StatusCancelled
+	case err != nil && errors.Is(err, exec.ErrNotFound):
+		phase, message = downloader.StatusFailed, "Binary yt-dlp tidak ditemukan. Periksa path di Pengaturan."
 	case err != nil:
 		phase, message = downloader.StatusFailed, err.Error()
 	}

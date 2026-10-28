@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   CancelDownload, PauseDownload, ResumeDownload, SelectDownloadFolder,
-  SelectYtDlpBinary, GetSettings, SaveSettings, SetQueueConcurrency, StartDownload,
+  SelectYtDlpBinary, GetAppVersion, GetSettings, CheckForUpdates, SaveSettings, SetQueueConcurrency, StartDownload,
 } from '../../wailsjs/go/app/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { AppSettings, DownloadFailure, DownloadProgress, DownloadRequest, ProgressEvent, QueueFailure, QueueItem } from '../types';
+import type { AppSettings, DownloadFailure, DownloadProgress, DownloadRequest, ProgressEvent, QueueFailure, QueueItem, UpdateInfo } from '../types';
 
 const emptyProgress = (): DownloadProgress => ({
   phase: 'queued', stage: 0, stageCount: 0, downloadedBytes: 0, totalBytes: 0,
@@ -19,11 +19,31 @@ export function useDownloader() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [appVersion, setAppVersion] = useState('dev');
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateError, setUpdateError] = useState('');
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+
+  const checkForUpdates = useCallback(async () => {
+    setCheckingUpdates(true);
+    setUpdateError('');
+    try {
+      const result = await CheckForUpdates();
+      setUpdateInfo(result);
+      setAppVersion(result.currentVersion);
+    } catch (failure) {
+      setUpdateError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }, []);
 
   useEffect(() => {
+    void GetAppVersion().then(setAppVersion).catch(() => undefined);
     void GetSettings().then((saved) => setSettings(saved)).catch((failure) => {
       setError(failure instanceof Error ? failure.message : String(failure));
     });
+    void checkForUpdates();
     const offQueue = EventsOn('download:queue', (next: QueueItem[]) => setItems(next));
     const offProgress = EventsOn('download:progress', (event: ProgressEvent) => {
       setItems((current) => current.map((item) => item.id === event.id ? { ...item, progress: event.progress } : item));
@@ -38,7 +58,7 @@ export function useDownloader() {
       }
     });
     return () => { offQueue(); offProgress(); offError(); };
-  }, []);
+  }, [checkForUpdates]);
 
   const start = useCallback(async (request: DownloadRequest) => {
     setError('');
@@ -117,8 +137,11 @@ export function useDownloader() {
     }
   }, []);
 
+  const clearError = useCallback(() => setError(''), []);
+
   return {
     items, error, settings, outputDir: settings.outputDir, concurrency: settings.maxConcurrent,
-    start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency,
+    appVersion, updateInfo, updateError, checkingUpdates, checkForUpdates,
+    start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency, clearError,
   };
 }

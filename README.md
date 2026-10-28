@@ -1,19 +1,42 @@
-# README
+# yt-dlp GUI
 
-## About
+A desktop video downloader built with Wails, React, and yt-dlp.
 
-This is the official Wails React-TS template.
+## Requirements
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+- Go 1.25 or newer
+- Node.js 22 or newer
+- Wails v2.17.0
+- Linux builds: GTK 3 and WebKit2GTK 4.1 development packages
+- Windows installers: NSIS
+- macOS builds: Xcode command line tools
+- yt-dlp installed on `PATH`, or select its executable in **Settings**
+- FFmpeg is required by yt-dlp for merging separate video/audio streams and audio extraction
 
-## Live Development
+The application does not bundle yt-dlp or FFmpeg. Set the yt-dlp executable path in **Settings** if it is not available through `PATH`.
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+## Development
 
-## Building
+```sh
+npm --prefix frontend ci
+wails dev -tags webkit2_41
+```
 
-To build a redistributable, production mode package, use `wails build`.
+## Build
+
+```sh
+make build VERSION=0.1.0
+make build-linux VERSION=0.1.0
+make build-windows VERSION=0.1.0
+make build-macos VERSION=0.1.0
+```
+
+Builds are placed in `build/bin`. Windows packaging uses NSIS. Linux packages are distributed as a tarball containing the application executable; macOS packages are distributed as `.app` archives.
+
+## Releases and updates
+
+Push a version tag such as `v0.1.0` to run the GitHub Actions release workflow. It builds Linux amd64, Windows amd64, macOS Intel, and macOS Apple Silicon artifacts and publishes them on the GitHub Releases page.
+
+The app checks the latest stable GitHub release on startup and can be checked again from the UI. When a newer release exists, **Open release** takes the user to its release page so they can choose and install the matching package. The app does not replace its own executable.
+
+macOS packages and Windows installers are not code-signed or notarized by this workflow. Users may see operating-system warnings until signing credentials and notarization are configured.
