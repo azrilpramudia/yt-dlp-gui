@@ -35,7 +35,27 @@ Builds are placed in `build/bin`. Windows packaging uses NSIS. Linux packages ar
 
 ## Releases and updates
 
-Push a version tag such as `v0.1.0` to run the GitHub Actions release workflow. It builds Linux amd64, Windows amd64, macOS Intel, and macOS Apple Silicon artifacts and publishes them on the GitHub Releases page.
+Releases are built and published by CircleCI when a version tag beginning with `v` is pushed. The workflow builds Linux amd64, a Windows amd64 NSIS installer, and a universal macOS app archive, then attaches the artifacts to a GitHub Release.
+
+### CircleCI setup
+
+Add a CircleCI project environment variable named `GH_TOKEN`. Its GitHub token must have access to this repository with **Contents: Read and write** permission so CircleCI can create releases and upload assets. Keep the token in CircleCI; do not commit it to the repository.
+
+### Create a release
+
+Push the commit you want to release before creating its tag. Use a tag with a hyphen for a pre-release (for example, `v0.1.1-beta.6`); tags without a hyphen (for example, `v0.1.1`) create a stable release.
+
+```sh
+# Pre-release
+git tag v0.1.1-beta.6
+git push origin v0.1.1-beta.6
+
+# Stable release (use this instead of the pre-release commands)
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+Use a new, unused version tag for every release. CircleCI runs the build jobs for the tag and publishes the GitHub Release only after the Linux, Windows, and macOS jobs all succeed. A tag containing a hyphen is published as a pre-release.
 
 The app checks the latest stable GitHub release on startup and can be checked again from the UI. When a newer release exists, **Open release** takes the user to its release page so they can choose and install the matching package. The app does not replace its own executable.
 
