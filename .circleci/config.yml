@@ -68,7 +68,16 @@ jobs:
             $env:Path += ";$(Split-Path $makensisPath)"
             & $makensisPath -VERSION
             $config = Get-Content wails.json -Raw | ConvertFrom-Json
-            $config.info.productVersion = $env:CIRCLE_TAG.TrimStart('v')
+            if ($env:CIRCLE_TAG -notmatch '^v?(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:-(?<prerelease>[0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$') {
+              throw "Tag '$env:CIRCLE_TAG' is not a valid application version."
+            }
+            $major = $Matches['major']
+            $minor = $Matches['minor']
+            $patch = $Matches['patch']
+            $prerelease = $Matches['prerelease']
+            $build = 0
+            if ($prerelease -match '(\d+)$') { $build = [int]$Matches[1] }
+            $config.info.productVersion = "$major.$minor.$patch.$build"
             $json = $config | ConvertTo-Json -Depth 100
             [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'wails.json'), $json, (New-Object System.Text.UTF8Encoding $false))
             wails build -platform windows/amd64 -tags webkit2_41 -ldflags "-X main.version=$env:CIRCLE_TAG" -trimpath -nsis
