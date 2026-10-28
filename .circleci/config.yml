@@ -38,6 +38,7 @@ jobs:
             - dist-linux
 
   build-windows:
+    working_directory: 'C:\Users\circleci\project'
     machine:
       image: windows-server-2022-gui:current
       shell: powershell.exe -ExecutionPolicy Bypass
@@ -65,9 +66,12 @@ jobs:
             [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'wails.json'), $json, (New-Object System.Text.UTF8Encoding $false))
             wails build -platform windows/amd64 -tags webkit2_41 -ldflags "-X main.version=$env:CIRCLE_TAG" -trimpath -nsis
             New-Item -ItemType Directory -Force -Path dist-windows | Out-Null
-            Copy-Item build/bin/*installer.exe dist-windows/
+            $installer = Get-ChildItem build/bin -Filter '*installer.exe' -File | Select-Object -First 1
+            if (-not $installer) { throw 'Windows installer was not produced in build/bin.' }
+            Copy-Item $installer.FullName dist-windows/
+            Get-ChildItem dist-windows
       - persist_to_workspace:
-          root: .
+          root: 'C:\Users\circleci\project'
           paths:
             - dist-windows
 
@@ -114,6 +118,20 @@ jobs:
           command: |
             sudo apt-get update
             sudo apt-get install -y gh
+      - run:
+          name: Verify release assets
+          command: |
+            for directory in dist-linux dist-windows dist-macos; do
+              if [[ ! -d "$directory" ]]; then
+                echo "Missing release asset directory: $directory"
+                find . -maxdepth 3 -type f -print
+                exit 1
+              fi
+              if [[ -z "$(find "$directory" -maxdepth 1 -type f -print -quit)" ]]; then
+                echo "No release files found in: $directory"
+                exit 1
+              fi
+            done
       - run:
           name: Publish GitHub release
           command: |
