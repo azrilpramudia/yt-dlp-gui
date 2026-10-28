@@ -53,3 +53,10 @@ export type UpdateInfo = {
   releaseUrl: string;
   available: boolean;
 };
+
+export type EngineStatus = {
+  ffmpegConnected: boolean;
+  ffmpegVersion: string;
+  ytDlpConnected: boolean;
+  ytDlpVersion: string;
+};

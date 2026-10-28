@@ -10,8 +10,16 @@ export function CheckForUpdates() {
   return window['go']['app']['App']['CheckForUpdates']();
 }
 
+export function ClearCompletedDownloads() {
+  return window['go']['app']['App']['ClearCompletedDownloads']();
+}
+
 export function GetAppVersion() {
   return window['go']['app']['App']['GetAppVersion']();
+}
+
+export function GetEngineStatus() {
+  return window['go']['app']['App']['GetEngineStatus']();
 }
 
 export function GetSettings() {

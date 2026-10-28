@@ -94,10 +94,10 @@ func (a *App) SelectDownloadFolder() (string, error) {
 	ctx := a.ctx
 	a.mu.Unlock()
 	if ctx == nil {
-		return "", downloader.NewDownloadError("Aplikasi belum siap")
+		return "", downloader.NewDownloadError("The application is not ready")
 	}
 	folder, err := runtime.OpenDirectoryDialog(ctx, runtime.OpenDialogOptions{
-		Title:                "Pilih folder unduhan",
+		Title:                "Select download folder",
 		CanCreateDirectories: true,
 	})
 	if err != nil {
@@ -111,9 +111,9 @@ func (a *App) SelectYtDlpBinary() (string, error) {
 	ctx := a.ctx
 	a.mu.Unlock()
 	if ctx == nil {
-		return "", downloader.NewDownloadError("Aplikasi belum siap")
+		return "", downloader.NewDownloadError("The application is not ready")
 	}
-	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{Title: "Pilih binary yt-dlp"})
+	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{Title: "Select yt-dlp executable"})
 	if err != nil {
 		return "", downloader.WrapDownloadError(err)
 	}
@@ -130,18 +130,18 @@ func (a *App) SaveSettings(settings config.Settings) error {
 	settings.OutputTemplate = strings.TrimSpace(settings.OutputTemplate)
 	settings.YtDlpPath = strings.TrimSpace(settings.YtDlpPath)
 	if settings.OutputTemplate == "" {
-		return downloader.NewDownloadError("Template output tidak boleh kosong")
+		return downloader.NewDownloadError("Output template cannot be empty")
 	}
 	if settings.YtDlpPath == "" {
-		return downloader.NewDownloadError("Path yt-dlp tidak boleh kosong")
+		return downloader.NewDownloadError("yt-dlp path cannot be empty")
 	}
 	if settings.MaxConcurrent < 1 || settings.MaxConcurrent > 4 {
-		return downloader.NewDownloadError("Jumlah unduhan bersamaan harus antara 1 dan 4")
+		return downloader.NewDownloadError("Concurrent downloads must be between 1 and 4")
 	}
 	a.mu.Lock()
 	if a.settingsPath == "" {
 		a.mu.Unlock()
-		return downloader.NewDownloadError("Lokasi file pengaturan tidak tersedia")
+		return downloader.NewDownloadError("Settings file location is unavailable")
 	}
 	if err := storage.WriteJSON(a.settingsPath, settings); err != nil {
 		a.mu.Unlock()
@@ -159,12 +159,12 @@ func (a *App) SaveSettings(settings config.Settings) error {
 // SetQueueConcurrency selects how many downloads can run at once (1 to 4).
 func (a *App) SetQueueConcurrency(count int) error {
 	if count < 1 || count > 4 {
-		return downloader.NewDownloadError("Jumlah unduhan bersamaan harus antara 1 dan 4")
+		return downloader.NewDownloadError("Concurrent downloads must be between 1 and 4")
 	}
 	a.mu.Lock()
 	if a.settingsPath == "" {
 		a.mu.Unlock()
-		return downloader.NewDownloadError("Lokasi file pengaturan tidak tersedia")
+		return downloader.NewDownloadError("Settings file location is unavailable")
 	}
 	settings := a.settings
 	settings.MaxConcurrent = count
@@ -184,13 +184,13 @@ func (a *App) SetQueueConcurrency(count int) error {
 func (a *App) StartDownload(options downloader.Options) (string, error) {
 	options.URL = strings.TrimSpace(options.URL)
 	if options.URL == "" {
-		return "", downloader.NewDownloadError("URL tidak boleh kosong")
+		return "", downloader.NewDownloadError("URL cannot be empty")
 	}
 	if options.AudioOnly {
 		switch options.AudioFormat {
 		case "", "mp3", "m4a", "opus", "wav", "flac":
 		default:
-			return "", downloader.NewDownloadError("Format audio tidak didukung")
+			return "", downloader.NewDownloadError("Audio format is not supported")
 		}
 	}
 	a.mu.Lock()
@@ -238,7 +238,7 @@ func (a *App) CancelDownload(id string) error {
 	item := a.tasks[id]
 	if item == nil {
 		a.mu.Unlock()
-		return downloader.NewDownloadError("Unduhan tidak ditemukan")
+		return downloader.NewDownloadError("Download not found")
 	}
 	if item.progress.Phase == downloader.StatusFinished || item.progress.Phase == downloader.StatusFailed || item.progress.Phase == downloader.StatusCancelled {
 		a.mu.Unlock()
@@ -258,12 +258,28 @@ func (a *App) CancelDownload(id string) error {
 	return nil
 }
 
+func (a *App) ClearCompletedDownloads() {
+	a.mu.Lock()
+	kept := a.order[:0]
+	for _, id := range a.order {
+		item := a.tasks[id]
+		if item != nil && !item.running && (item.progress.Phase == downloader.StatusFinished || item.progress.Phase == downloader.StatusFailed || item.progress.Phase == downloader.StatusCancelled) {
+			delete(a.tasks, id)
+			continue
+		}
+		kept = append(kept, id)
+	}
+	a.order = kept
+	a.mu.Unlock()
+	a.emitQueue()
+}
+
 func (a *App) PauseDownload(id string) error {
 	a.mu.Lock()
 	item := a.tasks[id]
 	if item == nil || !item.running {
 		a.mu.Unlock()
-		return downloader.NewDownloadError("Unduhan tidak sedang berjalan")
+		return downloader.NewDownloadError("Download is not running")
 	}
 	if item.paused {
 		a.mu.Unlock()
@@ -292,7 +308,7 @@ func (a *App) ResumeDownload(id string) error {
 	item := a.tasks[id]
 	if item == nil || !item.running || !item.paused {
 		a.mu.Unlock()
-		return downloader.NewDownloadError("Unduhan tidak sedang dijeda")
+		return downloader.NewDownloadError("Download is not paused")
 	}
 	process := item.process
 	if process != nil {
@@ -381,7 +397,7 @@ func (a *App) runDownload(item *task) {
 	case err != nil && errors.Is(ctx.Err(), context.Canceled):
 		phase = downloader.StatusCancelled
 	case err != nil && errors.Is(err, exec.ErrNotFound):
-		phase, message = downloader.StatusFailed, "Binary yt-dlp tidak ditemukan. Periksa path di Pengaturan."
+		phase, message = downloader.StatusFailed, "yt-dlp executable not found. Check the path in Settings."
 	case err != nil:
 		phase, message = downloader.StatusFailed, err.Error()
 	}

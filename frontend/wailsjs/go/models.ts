@@ -1,3 +1,26 @@
+export namespace app {
+
+	export class EngineStatus {
+	    ffmpegConnected: boolean;
+	    ffmpegVersion: string;
+	    ytDlpConnected: boolean;
+	    ytDlpVersion: string;
+
+	    static createFrom(source: any = {}) {
+	        return new EngineStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ffmpegConnected = source["ffmpegConnected"];
+	        this.ffmpegVersion = source["ffmpegVersion"];
+	        this.ytDlpConnected = source["ytDlpConnected"];
+	        this.ytDlpVersion = source["ytDlpVersion"];
+	    }
+	}
+
+}
+
 export namespace config {
 
 	export class Settings {

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { DownloadRequest } from '../../types';
+import { Icon } from './Icon';
 
 type UrlFormProps = {
   disabled: boolean;
@@ -9,11 +10,11 @@ type UrlFormProps = {
 };
 
 const qualityFormats = [
+  { label: 'Full HD (1080p)', value: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
   { label: 'Terbaik yang tersedia', value: 'bestvideo+bestaudio/best' },
-  { label: 'Maksimum 1080p', value: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
-  { label: 'Maksimum 720p', value: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
-  { label: 'Maksimum 480p', value: 'bestvideo[height<=480]+bestaudio/best[height<=480]' },
-  { label: 'Maksimum 360p', value: 'bestvideo[height<=360]+bestaudio/best[height<=360]' },
+  { label: 'HD (720p)', value: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
+  { label: 'SD (480p)', value: 'bestvideo[height<=480]+bestaudio/best[height<=480]' },
+  { label: 'Hemat data (360p)', value: 'bestvideo[height<=360]+bestaudio/best[height<=360]' },
 ];
 
 export function UrlForm({ disabled, folder, onPickFolder, onSubmit }: UrlFormProps) {
@@ -29,59 +30,80 @@ export function UrlForm({ disabled, folder, onPickFolder, onSubmit }: UrlFormPro
     onSubmit({ url: value, format, audioOnly, audioFormat });
   }
 
+  async function pasteURL() {
+    try {
+      const value = await navigator.clipboard.readText();
+      if (value) setUrl(value.trim());
+    } catch {
+      // Clipboard access may be unavailable in some WebView configurations.
+    }
+  }
+
   return (
-    <form className="space-y-5" onSubmit={submit}>
-      <label className="sr-only" htmlFor="video-url">URL video</label>
-      <input
-        id="video-url"
-        className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-white outline-none transition placeholder:text-slate-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-        type="url"
-        value={url}
-        onChange={(event) => setUrl(event.target.value)}
-        placeholder="Tempel URL video di sini"
-        autoComplete="url"
-        required
-      />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="space-y-2 text-sm text-slate-300">
-          <span>Kualitas video</span>
-          <select className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white disabled:opacity-50" value={format} onChange={(event) => setFormat(event.target.value)} disabled={disabled || audioOnly}>
+    <form className="download-form" onSubmit={submit}>
+      <div className="field-heading">
+        <label htmlFor="video-url">Media / Playlist URL</label>
+        <span className="text-muted">Supports YouTube, TikTok, Vimeo, Bilibili &amp; 1,000+ sites</span>
+      </div>
+
+      <div className="url-row">
+        <div className="url-field">
+          <Icon name="link" size={17} />
+          <input
+            id="video-url"
+            type="url"
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+            placeholder="Paste a video URL here..."
+            autoComplete="url"
+            required
+          />
+          <button className="paste-button hover-accent" type="button" onClick={() => void pasteURL()} aria-label="Paste from clipboard">
+            <Icon name="paste" size={14} /> <span>Paste</span>
+          </button>
+        </div>
+        <button className="analyze-button bg-accent hover-accent" type="submit" disabled={disabled || !url.trim()}>
+          <Icon name="search" size={16} /> Analyze
+        </button>
+      </div>
+
+      <div className="option-grid">
+        <label className="option-card bg-surface border-divider">
+          <span className="option-label text-muted">Video Quality</span>
+          <select value={format} onChange={(event) => setFormat(event.target.value)} disabled={disabled || audioOnly}>
             {qualityFormats.map((quality) => <option key={quality.value} value={quality.value}>{quality.label}</option>)}
           </select>
         </label>
-        <label className="flex items-center gap-3 self-end rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-200">
-          <input className="h-4 w-4 accent-blue-500" type="checkbox" checked={audioOnly} onChange={(event) => setAudioOnly(event.target.checked)} disabled={disabled} />
-          <span>Audio saja</span>
-        </label>
-        {audioOnly && (
-          <label className="space-y-2 text-sm text-slate-300 sm:col-span-2">
-            <span>Format audio</span>
-            <select className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-white" value={audioFormat} onChange={(event) => setAudioFormat(event.target.value)} disabled={disabled}>
-              <option value="mp3">MP3</option>
-              <option value="m4a">M4A</option>
-              <option value="opus">Opus</option>
-              <option value="wav">WAV</option>
-              <option value="flac">FLAC</option>
+
+        <div className="option-card bg-surface border-divider">
+          <span className="option-label text-muted">Output Format</span>
+          <div className="audio-control">
+            <span><Icon name="audio" size={16} /> Extract Audio{audioOnly ? ` (${audioFormat.toUpperCase()})` : ''}</span>
+            <button
+              className={`toggle-switch${audioOnly ? ' is-on' : ''}`}
+              type="button"
+              role="switch"
+              aria-checked={audioOnly}
+              aria-label="Extract audio only"
+              onClick={() => setAudioOnly((enabled) => !enabled)}
+              disabled={disabled}
+            ><span /></button>
+          </div>
+          {audioOnly && (
+            <select className="audio-format-select" value={audioFormat} onChange={(event) => setAudioFormat(event.target.value)} disabled={disabled} aria-label="Format audio">
+              <option value="mp3">MP3</option><option value="m4a">M4A</option><option value="opus">Opus</option><option value="wav">WAV</option><option value="flac">FLAC</option>
             </select>
-          </label>
-        )}
-      </div>
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3 sm:flex-row sm:items-center">
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Folder penyimpanan</p>
-          <p className="truncate text-sm text-slate-300">{folder || 'Folder Downloads default'}</p>
+          )}
         </div>
-        <button className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200 transition hover:border-slate-400 disabled:opacity-50" type="button" onClick={onPickFolder} disabled={disabled}>
-          Pilih folder…
-        </button>
+
+        <div className="option-card bg-surface border-divider">
+          <span className="option-label text-muted">Output Folder</span>
+          <button className="folder-picker hover-accent" type="button" onClick={onPickFolder} disabled={disabled}>
+            <span>{folder || '~/Downloads'}</span>
+            <Icon name="folder" size={16} />
+          </button>
+        </div>
       </div>
-      <button
-        className="w-full rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
-        type="submit"
-        disabled={disabled || !url.trim()}
-      >
-        Mulai unduh
-      </button>
     </form>
   );
 }

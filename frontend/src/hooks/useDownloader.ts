@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   CancelDownload, PauseDownload, ResumeDownload, SelectDownloadFolder,
-  SelectYtDlpBinary, GetAppVersion, GetSettings, CheckForUpdates, SaveSettings, SetQueueConcurrency, StartDownload,
+  SelectYtDlpBinary, GetAppVersion, GetSettings, GetEngineStatus, CheckForUpdates, SaveSettings, SetQueueConcurrency, StartDownload, ClearCompletedDownloads,
 } from '../../wailsjs/go/app/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { AppSettings, DownloadFailure, DownloadProgress, DownloadRequest, ProgressEvent, QueueFailure, QueueItem, UpdateInfo } from '../types';
+import type { AppSettings, DownloadFailure, DownloadProgress, DownloadRequest, EngineStatus, ProgressEvent, QueueFailure, QueueItem, UpdateInfo } from '../types';
 
 const emptyProgress = (): DownloadProgress => ({
   phase: 'queued', stage: 0, stageCount: 0, downloadedBytes: 0, totalBytes: 0,
@@ -19,6 +19,7 @@ export function useDownloader() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [error, setError] = useState('');
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
   const [appVersion, setAppVersion] = useState('dev');
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState('');
@@ -40,6 +41,7 @@ export function useDownloader() {
 
   useEffect(() => {
     void GetAppVersion().then(setAppVersion).catch(() => undefined);
+    void GetEngineStatus().then(setEngineStatus).catch(() => setEngineStatus(null));
     void GetSettings().then((saved) => setSettings(saved)).catch((failure) => {
       setError(failure instanceof Error ? failure.message : String(failure));
     });
@@ -50,7 +52,7 @@ export function useDownloader() {
     });
     const offError = EventsOn('download:error', (failure: QueueFailure | DownloadFailure) => {
       const queuedFailure = failure as QueueFailure;
-      setError(queuedFailure.message || 'Unduhan gagal');
+      setError(queuedFailure.message || 'Download failed');
       if (queuedFailure.id) {
         setItems((current) => current.map((item) => item.id === queuedFailure.id
           ? { ...item, error: queuedFailure.message, progress: { ...item.progress, phase: 'failed' } }
@@ -121,6 +123,8 @@ export function useDownloader() {
     try {
       await SaveSettings(updated);
       setSettings(updated);
+      const status = await GetEngineStatus();
+      setEngineStatus(status);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
       throw failure;
@@ -138,10 +142,14 @@ export function useDownloader() {
   }, []);
 
   const clearError = useCallback(() => setError(''), []);
+  const clearCompleted = useCallback(async () => {
+    try { await ClearCompletedDownloads(); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+  }, []);
 
   return {
-    items, error, settings, outputDir: settings.outputDir, concurrency: settings.maxConcurrent,
+    items, error, settings, engineStatus, outputDir: settings.outputDir, concurrency: settings.maxConcurrent,
     appVersion, updateInfo, updateError, checkingUpdates, checkForUpdates,
-    start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency, clearError,
+    start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency, clearError, clearCompleted,
   };
 }

@@ -1,72 +1,90 @@
-import { useState } from 'react';
-import { BrowserOpenURL } from '../wailsjs/runtime/runtime';
-import { DownloadList } from './components/ui/DownloadList';
-import { SettingsPanel } from './components/ui/SettingsPanel';
-import { UrlForm } from './components/ui/UrlForm';
+import { useEffect, useMemo, useState } from 'react';
+import { AppShell, type AppTheme, type AppView } from './components/layout/AppShell';
+import { DownloadsPage } from './components/pages/DownloadsPage';
+import { HistoryPage } from './components/pages/HistoryPage';
+import { SettingsPage } from './components/pages/SettingsPage';
+import { UpdatesPage } from './components/pages/UpdatesPage';
 import { useDownloader } from './hooks/useDownloader';
+import type { DownloadPhase } from './types';
+
+const terminalPhases: DownloadPhase[] = ['finished', 'failed', 'cancelled'];
+
+function savedTheme(): AppTheme {
+  try {
+    return localStorage.getItem('ytdlp-gui-theme') === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
 
 function App() {
-  const { items, error, settings, outputDir, concurrency, appVersion, updateInfo, updateError, checkingUpdates, checkForUpdates, start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency, clearError } = useDownloader();
+  const downloader = useDownloader();
+  const [view, setView] = useState<AppView>('downloads');
+  const [theme, setTheme] = useState<AppTheme>(savedTheme);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('ytdlp-gui-theme', theme); } catch { /* Storage may be disabled in embedded WebViews. */ }
+  }, [theme]);
+
+  const historyItems = useMemo(() => downloader.items.filter((item) => terminalPhases.includes(item.progress.phase)), [downloader.items]);
+  const currentItems = useMemo(() => downloader.items.filter((item) => !terminalPhases.includes(item.progress.phase)), [downloader.items]);
+  const activeCount = downloader.items.filter((item) => ['downloading', 'processing', 'paused'].includes(item.progress.phase)).length;
+  const titles: Record<AppView, string> = { downloads: 'Downloads', history: 'History', updates: 'Updates', settings: 'Settings' };
+
   return (
-    <main className="min-h-screen bg-slate-950 px-5 py-12 text-slate-100 sm:px-8">
-      <div className="mx-auto max-w-2xl space-y-8">
-        <header className="space-y-2">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-400">yt-dlp GUI</p>
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Unduh video</h1>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-slate-400">Tempel tautan video untuk memulai unduhan.</p>
-            <span className="text-xs text-slate-500">Versi {appVersion}</span>
-          </div>
-        </header>
-
-        {updateInfo?.available && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-800 bg-blue-950/50 px-4 py-3 text-sm text-blue-100" role="status">
-            <span>Versi baru {updateInfo.latestVersion} tersedia.</span>
-            <button className="font-semibold underline underline-offset-4" onClick={() => BrowserOpenURL(updateInfo.releaseUrl)}>Buka release</button>
-          </div>
-        )}
-        {updateInfo && !updateInfo.available && (
-          <p className="text-xs text-slate-500" role="status">Versi terbaru yang dirilis: {updateInfo.latestVersion}.</p>
-        )}
-        <div className="flex justify-end">
-          <button className="text-xs text-slate-400 underline underline-offset-4 hover:text-slate-200 disabled:opacity-50" onClick={() => void checkForUpdates()} disabled={checkingUpdates}>
-            {checkingUpdates ? 'Memeriksa pembaruan…' : 'Periksa pembaruan'}
-          </button>
-        </div>
-        {updateError && <p className="text-xs text-slate-500" role="status">Pemeriksaan pembaruan gagal. Periksa koneksi internet dan coba lagi.</p>}
-
-        <div className="flex justify-end">
-          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}>
-            {settingsOpen ? 'Tutup pengaturan' : 'Pengaturan'}
-          </button>
-        </div>
-
-        {settingsOpen && <SettingsPanel settings={settings} onChooseBinary={chooseBinary} onSave={saveSettings} />}
-
-        <UrlForm disabled={false} folder={outputDir} onPickFolder={() => void chooseFolder()} onSubmit={(request) => void start(request)} />
-
-        {error && (
-          <div className="flex items-start justify-between gap-3 rounded-xl border border-red-900/80 bg-red-950/50 px-4 py-3 text-sm text-red-200" role="alert">
-            {error}
-            <button className="shrink-0 text-red-300 underline underline-offset-2" onClick={clearError} aria-label="Tutup pesan error">Tutup</button>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between gap-3">
-          <label className="text-sm text-slate-400" htmlFor="queue-concurrency">Mode antrean</label>
-          <select id="queue-concurrency" className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200" value={concurrency} onChange={(event) => void setConcurrency(Number(event.target.value))}>
-            <option value={1}>Berurutan</option>
-            <option value={2}>Paralel · 2 unduhan</option>
-            <option value={3}>Paralel · 3 unduhan</option>
-            <option value={4}>Paralel · 4 unduhan</option>
-          </select>
-        </div>
-
-        <DownloadList items={items} onCancel={(id) => void cancel(id)} onPause={(id) => void pause(id)} onResume={(id) => void resume(id)} />
-      </div>
-    </main>
+    <AppShell
+      view={view}
+      title={titles[view]}
+      theme={theme}
+      historyCount={historyItems.length}
+      currentCount={currentItems.length}
+      engineStatus={downloader.engineStatus}
+      error={downloader.error}
+      concurrency={downloader.concurrency}
+      onNavigate={setView}
+      onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+      onConcurrencyChange={(value) => void downloader.setConcurrency(value)}
+      onClearError={downloader.clearError}
+    >
+      {view === 'downloads' && <DownloadsPage
+        items={currentItems}
+        historyCount={historyItems.length}
+        activeCount={activeCount}
+        outputDir={downloader.outputDir}
+        onStart={(request) => void downloader.start(request)}
+        onPickFolder={() => void downloader.chooseFolder()}
+        onCancel={(id) => void downloader.cancel(id)}
+        onPause={(id) => void downloader.pause(id)}
+        onResume={(id) => void downloader.resume(id)}
+        onClear={() => void downloader.clearCompleted()}
+        onShowHistory={() => setView('history')}
+      />}
+      {view === 'history' && <HistoryPage
+        items={historyItems}
+        onCancel={(id) => void downloader.cancel(id)}
+        onPause={(id) => void downloader.pause(id)}
+        onResume={(id) => void downloader.resume(id)}
+        onClear={() => void downloader.clearCompleted()}
+      />}
+      {view === 'updates' && <UpdatesPage
+        appVersion={downloader.appVersion}
+        updateInfo={downloader.updateInfo}
+        updateError={downloader.updateError}
+        checking={downloader.checkingUpdates}
+        onCheck={() => void downloader.checkForUpdates()}
+      />}
+      {view === 'settings' && <SettingsPage
+        settings={downloader.settings}
+        concurrency={downloader.concurrency}
+        detailsOpen={settingsOpen}
+        onChooseBinary={downloader.chooseBinary}
+        onSave={downloader.saveSettings}
+        onConcurrencyChange={(value) => void downloader.setConcurrency(value)}
+        onToggleDetails={() => setSettingsOpen((open) => !open)}
+      />}
+    </AppShell>
   );
 }
 
