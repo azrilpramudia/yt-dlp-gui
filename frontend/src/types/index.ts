@@ -39,3 +39,10 @@ export type QueueItem = {
 
 export type ProgressEvent = { id: string; progress: DownloadProgress };
 export type QueueFailure = { id: string; message: string };
+
+export type AppSettings = {
+  outputDir: string;
+  outputTemplate: string;
+  ytDlpPath: string;
+  maxConcurrent: number;
+};

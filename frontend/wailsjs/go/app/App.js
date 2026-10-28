@@ -6,6 +6,10 @@ export function CancelDownload(arg1) {
   return window['go']['app']['App']['CancelDownload'](arg1);
 }
 
+export function GetSettings() {
+  return window['go']['app']['App']['GetSettings']();
+}
+
 export function PauseDownload(arg1) {
   return window['go']['app']['App']['PauseDownload'](arg1);
 }
@@ -14,8 +18,16 @@ export function ResumeDownload(arg1) {
   return window['go']['app']['App']['ResumeDownload'](arg1);
 }
 
+export function SaveSettings(arg1) {
+  return window['go']['app']['App']['SaveSettings'](arg1);
+}
+
 export function SelectDownloadFolder() {
   return window['go']['app']['App']['SelectDownloadFolder']();
+}
+
+export function SelectYtDlpBinary() {
+  return window['go']['app']['App']['SelectYtDlpBinary']();
 }
 
 export function SetQueueConcurrency(arg1) {

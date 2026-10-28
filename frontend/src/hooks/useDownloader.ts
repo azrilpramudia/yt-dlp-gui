@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   CancelDownload, PauseDownload, ResumeDownload, SelectDownloadFolder,
-  SetQueueConcurrency, StartDownload,
+  SelectYtDlpBinary, GetSettings, SaveSettings, SetQueueConcurrency, StartDownload,
 } from '../../wailsjs/go/app/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { DownloadFailure, DownloadProgress, DownloadRequest, ProgressEvent, QueueFailure, QueueItem } from '../types';
+import type { AppSettings, DownloadFailure, DownloadProgress, DownloadRequest, ProgressEvent, QueueFailure, QueueItem } from '../types';
 
 const emptyProgress = (): DownloadProgress => ({
   phase: 'queued', stage: 0, stageCount: 0, downloadedBytes: 0, totalBytes: 0,
   estimated: false, indeterminate: true, stagePercent: 0, percent: 0, speed: 0, eta: -1,
 });
 
+const defaultSettings: AppSettings = {
+  outputDir: '', outputTemplate: '%(title)s.%(ext)s', ytDlpPath: 'yt-dlp', maxConcurrent: 1,
+};
+
 export function useDownloader() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [error, setError] = useState('');
-  const [outputDir, setOutputDir] = useState('');
-  const [concurrency, setConcurrencyState] = useState(1);
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
 
   useEffect(() => {
+    void GetSettings().then((saved) => setSettings(saved)).catch((failure) => {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    });
     const offQueue = EventsOn('download:queue', (next: QueueItem[]) => setItems(next));
     const offProgress = EventsOn('download:progress', (event: ProgressEvent) => {
       setItems((current) => current.map((item) => item.id === event.id ? { ...item, progress: event.progress } : item));
@@ -43,14 +49,14 @@ export function useDownloader() {
     };
     try {
       await StartDownload({
-        url: request.url.trim(), outputDir, outputTemplate: '', format: request.format,
+        url: request.url.trim(), outputDir: settings.outputDir, outputTemplate: '', format: request.format,
         audioOnly: request.audioOnly, audioFormat: request.audioFormat,
       });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
       setItems((current) => [...current, { ...optimistic, progress: { ...optimistic.progress, phase: 'failed' } }]);
     }
-  }, [outputDir]);
+  }, [settings]);
 
   const cancel = useCallback(async (id: string) => {
     try { await CancelDownload(id); }
@@ -71,9 +77,33 @@ export function useDownloader() {
     setError('');
     try {
       const folder = await SelectDownloadFolder();
-      if (folder) setOutputDir(folder);
+      if (folder) {
+        const updated = { ...settings, outputDir: folder };
+        await SaveSettings(updated);
+        setSettings(updated);
+      }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
+    }
+  }, [settings]);
+
+  const chooseBinary = useCallback(async () => {
+    setError('');
+    try { return await SelectYtDlpBinary(); }
+    catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+      return '';
+    }
+  }, []);
+
+  const saveSettings = useCallback(async (updated: AppSettings) => {
+    setError('');
+    try {
+      await SaveSettings(updated);
+      setSettings(updated);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+      throw failure;
     }
   }, []);
 
@@ -81,11 +111,14 @@ export function useDownloader() {
     setError('');
     try {
       await SetQueueConcurrency(count);
-      setConcurrencyState(count);
+      setSettings((current) => ({ ...current, maxConcurrent: count }));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
   }, []);
 
-  return { items, error, outputDir, concurrency, start, cancel, pause, resume, chooseFolder, setConcurrency };
+  return {
+    items, error, settings, outputDir: settings.outputDir, concurrency: settings.maxConcurrent,
+    start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency,
+  };
 }

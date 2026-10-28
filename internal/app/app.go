@@ -11,7 +11,9 @@ import (
 	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"ytdlp-gui/internal/config"
 	"ytdlp-gui/internal/downloader"
+	"ytdlp-gui/internal/storage"
 )
 
 const (
@@ -23,6 +25,7 @@ const (
 type task struct {
 	id               string
 	options          downloader.Options
+	binaryPath       string
 	progress         downloader.Progress
 	errMessage       string
 	ctx              context.Context
@@ -36,17 +39,36 @@ type task struct {
 type App struct {
 	mu            sync.Mutex
 	ctx           context.Context
-	runner        *downloader.Runner
 	tasks         map[string]*task
 	order         []string
 	maxConcurrent int
+	settings      config.Settings
+	settingsPath  string
 }
 
 func NewApp() *App {
+	settings := config.DefaultSettings()
+	settingsPath, _ := config.SettingsPath()
+	if settingsPath != "" {
+		var saved config.Settings
+		if storage.ReadJSON(settingsPath, &saved) == nil {
+			if saved.OutputTemplate != "" {
+				settings.OutputTemplate = saved.OutputTemplate
+			}
+			if saved.YtDlpPath != "" {
+				settings.YtDlpPath = saved.YtDlpPath
+			}
+			settings.OutputDir = saved.OutputDir
+			if saved.MaxConcurrent >= 1 && saved.MaxConcurrent <= 4 {
+				settings.MaxConcurrent = saved.MaxConcurrent
+			}
+		}
+	}
 	return &App{
-		runner:        &downloader.Runner{YtDlpPath: "yt-dlp"},
 		tasks:         make(map[string]*task),
-		maxConcurrent: 1,
+		maxConcurrent: settings.MaxConcurrent,
+		settings:      settings,
+		settingsPath:  settingsPath,
 	}
 }
 
@@ -73,12 +95,73 @@ func (a *App) SelectDownloadFolder() (string, error) {
 	return folder, nil
 }
 
+func (a *App) SelectYtDlpBinary() (string, error) {
+	a.mu.Lock()
+	ctx := a.ctx
+	a.mu.Unlock()
+	if ctx == nil {
+		return "", downloader.NewDownloadError("Aplikasi belum siap")
+	}
+	path, err := runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{Title: "Pilih binary yt-dlp"})
+	if err != nil {
+		return "", downloader.WrapDownloadError(err)
+	}
+	return path, nil
+}
+
+func (a *App) GetSettings() config.Settings {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.settings
+}
+
+func (a *App) SaveSettings(settings config.Settings) error {
+	settings.OutputTemplate = strings.TrimSpace(settings.OutputTemplate)
+	settings.YtDlpPath = strings.TrimSpace(settings.YtDlpPath)
+	if settings.OutputTemplate == "" {
+		return downloader.NewDownloadError("Template output tidak boleh kosong")
+	}
+	if settings.YtDlpPath == "" {
+		return downloader.NewDownloadError("Path yt-dlp tidak boleh kosong")
+	}
+	if settings.MaxConcurrent < 1 || settings.MaxConcurrent > 4 {
+		return downloader.NewDownloadError("Jumlah unduhan bersamaan harus antara 1 dan 4")
+	}
+	a.mu.Lock()
+	if a.settingsPath == "" {
+		a.mu.Unlock()
+		return downloader.NewDownloadError("Lokasi file pengaturan tidak tersedia")
+	}
+	if err := storage.WriteJSON(a.settingsPath, settings); err != nil {
+		a.mu.Unlock()
+		return downloader.WrapDownloadError(err)
+	}
+	a.settings = settings
+	a.maxConcurrent = settings.MaxConcurrent
+	started := a.dispatchLocked()
+	a.mu.Unlock()
+	a.emitQueue()
+	a.launch(started)
+	return nil
+}
+
 // SetQueueConcurrency selects how many downloads can run at once (1 to 4).
 func (a *App) SetQueueConcurrency(count int) error {
 	if count < 1 || count > 4 {
 		return downloader.NewDownloadError("Jumlah unduhan bersamaan harus antara 1 dan 4")
 	}
 	a.mu.Lock()
+	if a.settingsPath == "" {
+		a.mu.Unlock()
+		return downloader.NewDownloadError("Lokasi file pengaturan tidak tersedia")
+	}
+	settings := a.settings
+	settings.MaxConcurrent = count
+	if err := storage.WriteJSON(a.settingsPath, settings); err != nil {
+		a.mu.Unlock()
+		return downloader.WrapDownloadError(err)
+	}
+	a.settings = settings
 	a.maxConcurrent = count
 	started := a.dispatchLocked()
 	a.mu.Unlock()
@@ -99,6 +182,15 @@ func (a *App) StartDownload(options downloader.Options) (string, error) {
 			return "", downloader.NewDownloadError("Format audio tidak didukung")
 		}
 	}
+	a.mu.Lock()
+	if options.OutputTemplate == "" {
+		options.OutputTemplate = a.settings.OutputTemplate
+	}
+	binaryPath := a.settings.YtDlpPath
+	if options.OutputDir == "" {
+		options.OutputDir = a.settings.OutputDir
+	}
+	a.mu.Unlock()
 	if options.OutputDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -115,9 +207,10 @@ func (a *App) StartDownload(options downloader.Options) (string, error) {
 		return "", downloader.WrapDownloadError(err)
 	}
 	item := &task{
-		id:       id,
-		options:  options,
-		progress: downloader.Progress{Phase: downloader.StatusQueued, ETA: -1, Indeterminate: true},
+		id:         id,
+		options:    options,
+		binaryPath: binaryPath,
+		progress:   downloader.Progress{Phase: downloader.StatusQueued, ETA: -1, Indeterminate: true},
 	}
 	a.mu.Lock()
 	a.tasks[id] = item
@@ -249,7 +342,8 @@ func (a *App) runDownload(item *task) {
 	parser := downloader.NewParser()
 	var reported *downloader.DownloadError
 	var processErr error
-	err := a.runner.RunWithProcess(ctx, item.options, func(_ string, line string) {
+	runner := &downloader.Runner{YtDlpPath: item.binaryPath}
+	err := runner.RunWithProcess(ctx, item.options, func(_ string, line string) {
 		if strings.HasPrefix(line, "ERROR:") {
 			reported = downloader.NewDownloadError(strings.TrimSpace(strings.TrimPrefix(line, "ERROR:")))
 			return

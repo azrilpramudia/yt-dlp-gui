@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { DownloadList } from './components/ui/DownloadList';
+import { SettingsPanel } from './components/ui/SettingsPanel';
 import { UrlForm } from './components/ui/UrlForm';
 import { useDownloader } from './hooks/useDownloader';
 
 function App() {
-  const { items, error, outputDir, concurrency, start, cancel, pause, resume, chooseFolder, setConcurrency } = useDownloader();
+  const { items, error, settings, outputDir, concurrency, start, cancel, pause, resume, chooseFolder, chooseBinary, saveSettings, setConcurrency } = useDownloader();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <main className="min-h-screen bg-slate-950 px-5 py-12 text-slate-100 sm:px-8">
@@ -13,6 +16,14 @@ function App() {
           <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Unduh video</h1>
           <p className="text-slate-400">Tempel tautan video untuk memulai unduhan.</p>
         </header>
+
+        <div className="flex justify-end">
+          <button className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:border-slate-500 hover:text-white" onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen}>
+            {settingsOpen ? 'Tutup pengaturan' : 'Pengaturan'}
+          </button>
+        </div>
+
+        {settingsOpen && <SettingsPanel settings={settings} onChooseBinary={chooseBinary} onSave={saveSettings} />}
 
         <UrlForm disabled={false} folder={outputDir} onPickFolder={() => void chooseFolder()} onSubmit={(request) => void start(request)} />
 
