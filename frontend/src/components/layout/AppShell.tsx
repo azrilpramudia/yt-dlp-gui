@@ -15,7 +15,7 @@ type AppShellProps = {
   error: string | null;
   concurrency?: number;
   onNavigate: (view: AppView) => void;
-  onToggleTheme: () => void;
+  onThemeChange: (theme: AppTheme) => void;
   onConcurrencyChange?: (value: number) => void;
   onClearError: () => void;
   children: ReactNode;
@@ -23,7 +23,7 @@ type AppShellProps = {
 
 export function AppShell({
   view, title, theme, historyCount, currentCount, engineStatus, error, concurrency,
-  onNavigate, onToggleTheme, onConcurrencyChange, onClearError, children,
+  onNavigate, onThemeChange, onConcurrencyChange, onClearError, children,
 }: AppShellProps) {
   return (
     <div className="app-shell bg-base text-primary" data-theme={theme}>
@@ -37,16 +37,16 @@ export function AppShell({
             <NavItem view="settings" activeView={view} icon="settings" label="Settings" onNavigate={onNavigate} />
           </nav>
           <div className="sidebar-footer">
-            <button className="theme-sidebar-button hover-accent" type="button" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
-              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+            <button className="theme-toggle" type="button" onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} aria-pressed={theme === 'dark'}>
+              <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={16} />
+              <span className="theme-toggle-label">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
             </button>
           </div>
         </aside>
 
         <main className="main-content">
           <div className="page-title-row">
-            <h1>{title}</h1>
+            <div className="page-title-copy"><h1>{title}</h1></div>
             {view === 'downloads' && concurrency !== undefined && onConcurrencyChange && (
               <label className="concurrency-control">
                 <span>Queue</span>
@@ -86,9 +86,9 @@ function NavItem({ view, activeView, icon, label, count = 0, onNavigate }: NavIt
 function EngineStatusbar({ status }: { status: EngineStatus | null }) {
   return (
     <footer className="engine-statusbar" aria-label="Engine status">
-      <span>FFmpeg: {status ? (status.ffmpegConnected ? 'Connected' : 'Not detected') : 'Checking…'}{status?.ffmpegVersion ? ` · ${status.ffmpegVersion}` : ''}</span>
+      <span>FFmpeg: {status?.ffmpegVersion || '—'}</span>
       <span className="status-separator">•</span>
-      <span>yt-dlp: {status ? (status.ytDlpConnected ? `v${status.ytDlpVersion}` : 'Not detected') : 'Checking…'}</span>
+      <span>yt-dlp: {status?.ytDlpVersion ? `v${status.ytDlpVersion}` : '—'}</span>
     </footer>
   );
 }

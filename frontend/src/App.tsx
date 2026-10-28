@@ -44,7 +44,7 @@ function App() {
       error={downloader.error}
       concurrency={downloader.concurrency}
       onNavigate={setView}
-      onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+      onThemeChange={setTheme}
       onConcurrencyChange={(value) => void downloader.setConcurrency(value)}
       onClearError={downloader.clearError}
     >
