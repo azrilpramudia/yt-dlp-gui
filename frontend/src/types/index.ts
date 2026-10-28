@@ -21,3 +21,10 @@ export type DownloadProgress = {
 };
 
 export type DownloadFailure = { message: string };
+
+export type DownloadRequest = {
+  url: string;
+  format: string;
+  audioOnly: boolean;
+  audioFormat: string;
+};

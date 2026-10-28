@@ -31,11 +31,34 @@ func NewApp() *App {
 
 func (a *App) Startup(ctx context.Context) { a.ctx = ctx }
 
+// SelectDownloadFolder opens the native directory picker. An empty path means it was dismissed.
+func (a *App) SelectDownloadFolder() (string, error) {
+	if a.ctx == nil {
+		return "", downloader.NewDownloadError("Aplikasi belum siap")
+	}
+	folder, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:                "Pilih folder unduhan",
+		CanCreateDirectories: true,
+		ShowHiddenFiles:      false,
+	})
+	if err != nil {
+		return "", downloader.WrapDownloadError(err)
+	}
+	return folder, nil
+}
+
 // StartDownload starts a download in the background and streams progress events.
 func (a *App) StartDownload(options downloader.Options) error {
 	options.URL = strings.TrimSpace(options.URL)
 	if options.URL == "" {
 		return downloader.NewDownloadError("URL tidak boleh kosong")
+	}
+	if options.AudioOnly {
+		switch options.AudioFormat {
+		case "", "mp3", "m4a", "opus", "wav", "flac":
+		default:
+			return downloader.NewDownloadError("Format audio tidak didukung")
+		}
 	}
 	if options.OutputDir == "" {
 		home, err := os.UserHomeDir()

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CancelDownload, StartDownload } from '../../wailsjs/go/app/App';
+import { CancelDownload, SelectDownloadFolder, StartDownload } from '../../wailsjs/go/app/App';
 import { EventsOn } from '../../wailsjs/runtime/runtime';
-import type { DownloadFailure, DownloadProgress } from '../types';
+import type { DownloadFailure, DownloadProgress, DownloadRequest } from '../types';
 
 const emptyProgress = (): DownloadProgress => ({
   phase: 'queued', stage: 0, stageCount: 0, downloadedBytes: 0, totalBytes: 0,
@@ -11,6 +11,7 @@ const emptyProgress = (): DownloadProgress => ({
 export function useDownloader() {
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [error, setError] = useState('');
+  const [outputDir, setOutputDir] = useState('');
   const active = progress?.phase === 'queued' || progress?.phase === 'downloading' || progress?.phase === 'processing';
 
   useEffect(() => {
@@ -22,13 +23,26 @@ export function useDownloader() {
     return () => { offProgress(); offError(); };
   }, []);
 
-  const start = useCallback(async (url: string) => {
+  const start = useCallback(async (request: DownloadRequest) => {
     setError('');
     setProgress(emptyProgress());
     try {
-      await StartDownload({ url: url.trim(), outputDir: '', outputTemplate: '', format: '' });
+      await StartDownload({
+        url: request.url.trim(), outputDir, outputTemplate: '', format: request.format,
+        audioOnly: request.audioOnly, audioFormat: request.audioFormat,
+      });
     } catch (failure) {
       setProgress((current) => current ? { ...current, phase: 'failed' } : null);
+      setError(failure instanceof Error ? failure.message : String(failure));
+    }
+  }, [outputDir]);
+
+  const chooseFolder = useCallback(async () => {
+    setError('');
+    try {
+      const folder = await SelectDownloadFolder();
+      if (folder) setOutputDir(folder);
+    } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
   }, []);
@@ -41,5 +55,5 @@ export function useDownloader() {
     }
   }, []);
 
-  return { progress, error, active, start, cancel, clearError: () => setError('') };
+  return { progress, error, active, outputDir, start, cancel, chooseFolder };
 }

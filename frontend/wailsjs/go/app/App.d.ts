@@ -4,4 +4,6 @@ import {downloader} from '../models';
 
 export function CancelDownload():Promise<void>;
 
+export function SelectDownloadFolder():Promise<string>;
+
 export function StartDownload(arg1:downloader.Options):Promise<void>;

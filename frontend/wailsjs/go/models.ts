@@ -5,6 +5,8 @@ export namespace downloader {
 	    outputDir: string;
 	    outputTemplate: string;
 	    format: string;
+	    audioOnly: boolean;
+	    audioFormat: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Options(source);
@@ -16,6 +18,8 @@ export namespace downloader {
 	        this.outputDir = source["outputDir"];
 	        this.outputTemplate = source["outputTemplate"];
 	        this.format = source["format"];
+	        this.audioOnly = source["audioOnly"];
+	        this.audioFormat = source["audioFormat"];
 	    }
 	}
 

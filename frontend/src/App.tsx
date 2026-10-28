@@ -3,7 +3,7 @@ import { UrlForm } from './components/ui/UrlForm';
 import { useDownloader } from './hooks/useDownloader';
 
 function App() {
-  const { progress, error, active, start, cancel } = useDownloader();
+  const { progress, error, active, outputDir, start, cancel, chooseFolder } = useDownloader();
 
   return (
     <main className="min-h-screen bg-slate-950 px-5 py-12 text-slate-100 sm:px-8">
@@ -14,7 +14,7 @@ function App() {
           <p className="text-slate-400">Tempel tautan video untuk memulai unduhan.</p>
         </header>
 
-        <UrlForm disabled={active} onSubmit={(url) => void start(url)} />
+        <UrlForm disabled={active} folder={outputDir} onPickFolder={() => void chooseFolder()} onSubmit={(request) => void start(request)} />
 
         {error && (
           <div className="rounded-xl border border-red-900/80 bg-red-950/50 px-4 py-3 text-sm text-red-200" role="alert">

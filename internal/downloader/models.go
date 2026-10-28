@@ -18,6 +18,8 @@ type Options struct {
 	OutputDir      string `json:"outputDir"`
 	OutputTemplate string `json:"outputTemplate"`
 	Format         string `json:"format"`
+	AudioOnly      bool   `json:"audioOnly"`
+	AudioFormat    string `json:"audioFormat"`
 }
 
 type Progress struct {

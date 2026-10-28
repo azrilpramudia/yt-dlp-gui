@@ -6,6 +6,10 @@ export function CancelDownload() {
   return window['go']['app']['App']['CancelDownload']();
 }
 
+export function SelectDownloadFolder() {
+  return window['go']['app']['App']['SelectDownloadFolder']();
+}
+
 export function StartDownload(arg1) {
   return window['go']['app']['App']['StartDownload'](arg1);
 }

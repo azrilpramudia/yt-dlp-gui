@@ -30,7 +30,13 @@ func (r *Runner) buildArgs(o Options) []string {
 		"--progress-template", progressTemplate,
 		"-o", filepath.Join(o.OutputDir, tmpl),
 	}
-	if o.Format != "" {
+	if o.AudioOnly {
+		format := o.AudioFormat
+		if format == "" {
+			format = "mp3"
+		}
+		args = append(args, "-x", "--audio-format", format)
+	} else if o.Format != "" {
 		args = append(args, "-f", o.Format)
 	}
 
