@@ -1,5 +1,7 @@
 package downloader
 
+import "fmt"
+
 type Status string
 
 const (
@@ -30,4 +32,19 @@ type Progress struct {
 	Percent         float64 `json:"percent"`
 	Speed           float64 `json:"speed"`
 	ETA             int     `json:"eta"`
+}
+
+// DownloadError carries a user-facing message reported by yt-dlp or the runner.
+type DownloadError struct {
+	Message string `json:"message"`
+}
+
+func (e *DownloadError) Error() string { return e.Message }
+
+func NewDownloadError(message string) *DownloadError {
+	return &DownloadError{Message: message}
+}
+
+func WrapDownloadError(err error) *DownloadError {
+	return NewDownloadError(fmt.Sprint(err))
 }

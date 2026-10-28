@@ -22,8 +22,8 @@ func main() {
 		downloader.Options{URL: os.Args[1], OutputDir: "/tmp/ytdlp-test"},
 		func(stream, line string) {
 			if pr, ok := p.Feed(line); ok {
-				fmt.Printf("%-11s tahap %d/%d  stage=%5.1f%%  total=%5.1f%%  speed=%8.0f B/s  eta=%ds  est=%v\n ind=%v pr.Indeterminate",
-					pr.Phase, pr.Stage, pr.StageCount, pr.StagePercent, pr.Percent, pr.Speed, pr.ETA, pr.Estimated)
+				fmt.Printf("%-11s tahap %d/%d  stage=%5.1f%%  total=%5.1f%%  speed=%8.0f B/s  eta=%ds  est=%v  ind=%v\n",
+					pr.Phase, pr.Stage, pr.StageCount, pr.StagePercent, pr.Percent, pr.Speed, pr.ETA, pr.Estimated, pr.Indeterminate)
 				return
 			}
 			fmt.Printf("[%s] %s\n", stream, line)
