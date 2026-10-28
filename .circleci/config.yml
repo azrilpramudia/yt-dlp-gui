@@ -60,6 +60,13 @@ jobs:
           name: Build Windows installer
           command: |
             $env:Path += ";$env:USERPROFILE\go\bin"
+            $makensisPath = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+            if (-not $makensisPath) {
+              $makensisPath = (Get-ChildItem 'C:\Program Files (x86)\NSIS', 'C:\Program Files\NSIS', "$env:ChocolateyInstall\lib\nsis\tools" -Filter makensis.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+            }
+            if (-not $makensisPath) { throw 'NSIS makensis.exe was not found after installation.' }
+            $env:Path += ";$(Split-Path $makensisPath)"
+            & $makensisPath -VERSION
             $config = Get-Content wails.json -Raw | ConvertFrom-Json
             $config.info.productVersion = $env:CIRCLE_TAG.TrimStart('v')
             $json = $config | ConvertTo-Json -Depth 100
